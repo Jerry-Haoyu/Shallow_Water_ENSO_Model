@@ -1,24 +1,31 @@
-import Pkg
-Pkg.add(["ParallelStencil", "CUDA", "CairoMakie", "YAML", "ProgressBars", "JLD2"])
+# Submit one SLURM batch job per experiment found in runs/.
+# Each subdirectory that contains input/params.yml is treated as a job.
+# Logs are written to runs/<job_name>/batch_out_<jobid> and batch_err_<jobid>.
 
-# ============================================================
-# Change this to select which run to execute.
-# The code reads  runs/<job_name>/input/params.yml
-# and writes output to  runs/<job_name>/output/
-# ============================================================
-const job_name = "default"
+runs_dir = "runs/shallow_water_simulator"
 
-# ---- GPU backend (must be a bare top-level macro call) ----
-using ParallelStencil
-using ParallelStencil.FiniteDifferences2D
-@init_parallel_stencil(CUDA, Float64, 2)
+for entry in sort(readdir(runs_dir))
+    params_file = joinpath(runs_dir, entry, "input", "params.yml")
+    isfile(params_file) || continue
 
-include("src/config.jl")
-include("src/shallow_water.jl")
-include("src/visualize.jl")
+    output_dir = joinpath(runs_dir, entry, "output")
+    isdir(output_dir) && !isempty(readdir(output_dir)) && continue
 
-cfg = load_config(job_name)
-run_simulation(cfg)
-make_animation(cfg)
-make_timeseries(cfg)
+    log_dir = joinpath(runs_dir, entry)
+    mkpath(log_dir)
 
+    cmd = `sbatch
+        --job-name=$entry
+        --output=$(joinpath(log_dir, "batch_out_%j"))
+        --error=$(joinpath(log_dir, "batch_err_%j"))
+        --export=JOB_NAME=$entry
+        launch.slurm`
+
+    result = readchomp(cmd)
+    println("$entry  →  $result")
+end
+
+
+# include("src/visualize.jl")
+# # plot_fft()
+# plot_frequency_shift()
